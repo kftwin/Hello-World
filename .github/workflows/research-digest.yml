@@ -57,11 +57,8 @@ jobs:
           TLDR=$(awk '/^## TL;DR/{found=1; next} found && /^---/{exit} found && /^-/{print}' "$FILE" \
             | sed 's/^- /• /' | head -5)
 
-          TEXT="📋 *Daily Digest — ${DATE}*
-
-${TLDR:-No TL;DR found.}
-
-_Full digest attached ↓_"
+          TEXT=$(printf '📋 *Daily Digest — %s*\n\n%s\n\n_Full digest attached ↓_' \
+            "${DATE}" "${TLDR:-No TL;DR found.}")
 
           curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
             --data-urlencode "chat_id=${CHAT_ID}" \
