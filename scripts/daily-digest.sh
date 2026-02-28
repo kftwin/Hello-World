@@ -19,17 +19,49 @@ REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DATE="${1:-$(date +%Y-%m-%d)}"
 OUTPUT_FILE="$REPO_DIR/digests/$DATE.md"
 LOG_FILE="$REPO_DIR/digests/.log"
+STATUS_FILE="$REPO_DIR/status/agents.json"
 
-echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] Starting researcher agent for $DATE" | tee -a "$LOG_FILE"
+log() { echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] $*" | tee -a "$LOG_FILE"; }
+
+update_status() {
+  local status="$1" message="$2" output="${3:-}"
+  local now; now=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+  python3 -c "
+import json
+with open('$STATUS_FILE') as f:
+    d = json.load(f)
+d['last_updated'] = '$now'
+r = d['agents'].setdefault('researcher', {})
+r['status'] = '$status'
+r['message'] = '$message'
+r['last_run'] = '$now'
+r['pid'] = None
+if '$output':
+    r['last_output'] = '$output'
+with open('$STATUS_FILE', 'w') as f:
+    json.dump(d, f, indent=2)
+" 2>/dev/null || true
+}
+
+notify() { bash "$REPO_DIR/scripts/notify.sh" "$@" 2>/dev/null || true; }
+
+# ── Start ────────────────────────────────────────────────────────────────────
+
+log "Starting researcher agent for $DATE"
+update_status "running" "Researching trends for $DATE"
+notify "researcher" "Starting daily research for $DATE" "hourglass_flowing_sand"
 
 # Skip if digest already exists for today
 if [[ -f "$OUTPUT_FILE" ]]; then
-  echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] Digest already exists at $OUTPUT_FILE — skipping." | tee -a "$LOG_FILE"
+  log "Digest already exists at $OUTPUT_FILE — skipping."
+  update_status "done" "Digest already existed for $DATE" "$OUTPUT_FILE"
   exit 0
 fi
 
-# Run the researcher agent in headless mode
-# The agent reads its instructions from .claude/agents/researcher.md
+# ── Run agent ────────────────────────────────────────────────────────────────
+
+notify "researcher" "Searching web for agentic & vibe coding trends..." "mag"
+
 claude -p \
   "You are the researcher agent. Today's date is $DATE.
   Research the top trends in agentic workflows and vibe coding.
@@ -39,19 +71,22 @@ claude -p \
   --output-format text \
   2>> "$LOG_FILE"
 
+# ── Check output ─────────────────────────────────────────────────────────────
+
 if [[ -f "$OUTPUT_FILE" ]]; then
-  echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] Digest written to $OUTPUT_FILE" | tee -a "$LOG_FILE"
+  log "Digest written to $OUTPUT_FILE"
+  update_status "done" "Digest complete for $DATE" "$OUTPUT_FILE"
+  notify "researcher" "Digest ready for $DATE — see digests/$DATE.md" "white_check_mark" "high"
 else
-  echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] ERROR: Digest not found at $OUTPUT_FILE" | tee -a "$LOG_FILE"
+  log "ERROR: Digest not found at $OUTPUT_FILE"
+  update_status "error" "Digest file not created for $DATE"
+  notify "researcher" "ERROR: Digest failed for $DATE — check logs" "x" "urgent"
   exit 1
 fi
 
-# ── Phone notification via ntfy.sh ──────────────────────────────────────────
-# Requires: export NTFY_TOPIC="your-private-topic" (set in ~/.bashrc or .env.local)
-# Android: install ntfy app → subscribe to ntfy.sh/$NTFY_TOPIC
-# iOS:     install ntfy app → subscribe to ntfy.sh/$NTFY_TOPIC
+# ── Phone push (ntfy TL;DR) ──────────────────────────────────────────────────
+# Android/iOS: install ntfy app → subscribe to ntfy.sh/$NTFY_TOPIC
 if [[ -n "${NTFY_TOPIC:-}" ]]; then
-  # Extract TL;DR section for the push notification body
   TLDR=$(awk '/^## TL;DR/,/^---/' "$OUTPUT_FILE" \
     | grep '^-' \
     | sed 's/^- /• /' \
@@ -65,8 +100,8 @@ if [[ -n "${NTFY_TOPIC:-}" ]]; then
     -d "${TLDR:-See digest for $DATE}" \
     "https://ntfy.sh/$NTFY_TOPIC" >> "$LOG_FILE" 2>&1
 
-  echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] Push notification sent to ntfy.sh/$NTFY_TOPIC" | tee -a "$LOG_FILE"
+  log "Push notification sent to ntfy.sh/$NTFY_TOPIC"
 else
-  echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] NTFY_TOPIC not set — skipping phone notification." | tee -a "$LOG_FILE"
+  log "NTFY_TOPIC not set — skipping phone notification."
   echo "  To enable: export NTFY_TOPIC=your-private-topic"
 fi

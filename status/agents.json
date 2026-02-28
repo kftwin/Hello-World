@@ -1,0 +1,13 @@
+{
+  "last_updated": "",
+  "agents": {
+    "researcher": {
+      "status": "idle",
+      "last_run": "",
+      "last_output": "",
+      "next_run": "07:00 UTC daily",
+      "pid": null,
+      "message": "Waiting for first run"
+    }
+  }
+}
