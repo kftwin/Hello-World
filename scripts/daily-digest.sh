@@ -84,10 +84,15 @@ else
   exit 1
 fi
 
-# ── Telegram delivery (TL;DR text + full digest as document) ─────────────────
-# Setup: see scripts/notify.sh header for 2-min Telegram bot instructions
-bash "$REPO_DIR/scripts/notify.sh" send_digest "$OUTPUT_FILE" "$DATE" 2>&1 | tee -a "$LOG_FILE"
-
 # ── RSS feed (rebuild feed.xml for all digests) ───────────────────────────────
 # Subscribe via GitHub Pages: https://kftwin.github.io/Hello-World/digests/feed.xml
 bash "$REPO_DIR/scripts/generate-rss.sh" 2>&1 | tee -a "$LOG_FILE"
+
+# ── Commit + push → triggers GitHub Actions → Telegram delivery ───────────────
+# The .github/workflows/deliver-digest.yml workflow sends the digest to Telegram
+# using GitHub's runners (which have full internet access).
+log "Committing and pushing digest to trigger Telegram delivery..."
+cd "$REPO_DIR"
+git add "digests/$DATE.md" "digests/feed.xml" "status/agents.json" 2>/dev/null || true
+git diff --staged --quiet || git commit -m "digest: add researcher digest for $DATE"
+git push origin HEAD 2>&1 | tee -a "$LOG_FILE" || log "WARNING: git push failed — check remote access"
