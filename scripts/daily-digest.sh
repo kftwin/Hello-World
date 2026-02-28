@@ -84,24 +84,10 @@ else
   exit 1
 fi
 
-# ── Phone push (ntfy TL;DR) ──────────────────────────────────────────────────
-# Android/iOS: install ntfy app → subscribe to ntfy.sh/$NTFY_TOPIC
-if [[ -n "${NTFY_TOPIC:-}" ]]; then
-  TLDR=$(awk '/^## TL;DR/,/^---/' "$OUTPUT_FILE" \
-    | grep '^-' \
-    | sed 's/^- /• /' \
-    | head -5 \
-    | tr '\n' ' ')
+# ── Telegram delivery (TL;DR text + full digest as document) ─────────────────
+# Setup: see scripts/notify.sh header for 2-min Telegram bot instructions
+bash "$REPO_DIR/scripts/notify.sh" send_digest "$OUTPUT_FILE" "$DATE" 2>&1 | tee -a "$LOG_FILE"
 
-  curl -s \
-    -H "Title: 🤖 Daily Digest — $DATE" \
-    -H "Priority: default" \
-    -H "Tags: robot,newspaper" \
-    -d "${TLDR:-See digest for $DATE}" \
-    "https://ntfy.sh/$NTFY_TOPIC" >> "$LOG_FILE" 2>&1
-
-  log "Push notification sent to ntfy.sh/$NTFY_TOPIC"
-else
-  log "NTFY_TOPIC not set — skipping phone notification."
-  echo "  To enable: export NTFY_TOPIC=your-private-topic"
-fi
+# ── RSS feed (rebuild feed.xml for all digests) ───────────────────────────────
+# Subscribe via GitHub Pages: https://kftwin.github.io/Hello-World/digests/feed.xml
+bash "$REPO_DIR/scripts/generate-rss.sh" 2>&1 | tee -a "$LOG_FILE"
